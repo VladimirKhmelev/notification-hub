@@ -10,4 +10,4 @@ logs:
 	docker-compose logs -f
 
 build:
-	go build ./...
+	go build -o bin/api ./cmd/api

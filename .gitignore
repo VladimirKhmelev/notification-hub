@@ -2,3 +2,5 @@
 .env*
 secrets/
 *_service_account.json
+/api
+/bin/
