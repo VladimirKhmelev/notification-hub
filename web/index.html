@@ -72,7 +72,7 @@
       gap: 8px;
     }
 
-    #source-form input {
+    #source-form input, #source-form select {
       background: #1e2130;
       border: 1px solid #2d3148;
       border-radius: 6px;
@@ -83,7 +83,7 @@
       transition: border-color .2s;
     }
 
-    #source-form input:focus { border-color: #6366f1; }
+    #source-form input:focus, #source-form select:focus { border-color: #6366f1; }
     #source-form input::placeholder { color: #475569; }
 
     #source-form button {
@@ -199,7 +199,13 @@
   <h2>Sources</h2>
   <form id="source-form">
     <input id="inp-name" placeholder="Name" required>
-    <input id="inp-url"  placeholder="URL (https://...)" required>
+    <select id="inp-type">
+      <option value="uptime">uptime</option>
+      <option value="rss">rss</option>
+      <option value="github">github</option>
+      <option value="price">price</option>
+    </select>
+    <input id="inp-url"  placeholder="URL / repo (owner/repo)" required>
     <button type="submit">Add source</button>
   </form>
   <div id="sources-list"></div>
@@ -317,13 +323,21 @@
   document.getElementById('source-form').addEventListener('submit', e => {
     e.preventDefault();
     const name = document.getElementById('inp-name').value.trim();
-    const url  = document.getElementById('inp-url').value.trim();
-    if (!name || !url) return;
+    const type = document.getElementById('inp-type').value;
+    const raw  = document.getElementById('inp-url').value.trim();
+    if (!name || !raw) return;
+
+    let config;
+    if (type === 'github') {
+      config = { repo: raw };
+    } else {
+      config = { url: raw };
+    }
 
     fetch(`${API}/sources`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ type: 'uptime', name, config: { url } }),
+      body: JSON.stringify({ type, name, config }),
     })
       .then(() => {
         document.getElementById('inp-name').value = '';
