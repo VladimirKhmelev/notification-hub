@@ -55,6 +55,19 @@ services:
       nats:
         condition: service_started
 
+  event-collector-price:
+    build:
+      context: .
+      dockerfile: cmd/event-collector-price/Dockerfile
+    environment:
+      DATABASE_URL: postgres://hub:hub@postgres:5432/hub?sslmode=disable
+      NATS_URL: nats://nats:4222
+    depends_on:
+      postgres:
+        condition: service_healthy
+      nats:
+        condition: service_started
+
   event-collector-github:
     build:
       context: .
