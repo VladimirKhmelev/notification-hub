@@ -25,5 +25,15 @@ services:
       postgres:
         condition: service_healthy
 
+  event-collector-uptime:
+    build:
+      context: .
+      dockerfile: cmd/event-collector-uptime/Dockerfile
+    environment:
+      DATABASE_URL: postgres://hub:hub@postgres:5432/hub?sslmode=disable
+    depends_on:
+      postgres:
+        condition: service_healthy
+
 volumes:
   pgdata:
