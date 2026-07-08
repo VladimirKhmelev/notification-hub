@@ -20,6 +20,7 @@ func (h *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("/sources", h.sources)
 	mux.HandleFunc("/sources/", h.sourceByID)
 	mux.HandleFunc("/events", h.events)
+	mux.HandleFunc("/events/", h.eventByID)
 }
 
 // POST /sources        — create
@@ -153,6 +154,35 @@ func (h *Handler) createSource(w http.ResponseWriter, r *http.Request) {
 	}
 	w.WriteHeader(http.StatusCreated)
 	writeJSON(w, s)
+}
+
+// PATCH /events/{id}/read — mark event as read
+func (h *Handler) eventByID(w http.ResponseWriter, r *http.Request) {
+	parts := strings.Split(strings.TrimPrefix(r.URL.Path, "/events/"), "/")
+	id, err := strconv.ParseInt(parts[0], 10, 64)
+	if err != nil {
+		http.Error(w, "invalid id", http.StatusBadRequest)
+		return
+	}
+
+	// only PATCH /events/{id}/read is supported
+	if r.Method != http.MethodPatch || len(parts) < 2 || parts[1] != "read" {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+
+	res, err := h.db.Exec(
+		`UPDATE events SET read_at = NOW() WHERE id = $1 AND read_at IS NULL`, id,
+	)
+	if err != nil {
+		http.Error(w, "db error", http.StatusInternalServerError)
+		return
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		http.Error(w, "not found or already read", http.StatusNotFound)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 func writeJSON(w http.ResponseWriter, v any) {

@@ -113,8 +113,9 @@
       font-size: .85rem;
     }
 
-    .source-item .source-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    .source-item .source-url  { font-size: .7rem; color: #64748b; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; }
+    .source-item > div { flex: 1; min-width: 0; }
+    .source-item .source-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .source-item .source-url  { font-size: .7rem; color: #64748b; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
     .source-del {
       background: none;
@@ -137,14 +138,38 @@
       overflow: hidden;
     }
 
-    main h2 {
-      padding: 16px;
+    #feed-header {
+      padding: 10px 16px;
+      border-bottom: 1px solid #2d3148;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    #feed-header span {
       font-size: .7rem;
       text-transform: uppercase;
       letter-spacing: .08em;
       color: #64748b;
-      border-bottom: 1px solid #2d3148;
+      margin-right: auto;
     }
+
+    .filter-btn {
+      background: none;
+      border: 1px solid #2d3148;
+      border-radius: 4px;
+      color: #64748b;
+      font-size: .75rem;
+      padding: 3px 10px;
+      cursor: pointer;
+      transition: all .15s;
+    }
+
+    .filter-btn:hover { border-color: #6366f1; color: #e2e8f0; }
+    .filter-btn.active { background: #6366f1; border-color: #6366f1; color: #fff; }
+    .filter-btn.active.high   { background: #ef4444; border-color: #ef4444; }
+    .filter-btn.active.normal { background: #6366f1; border-color: #6366f1; }
+    .filter-btn.active.low    { background: #475569; border-color: #475569; }
 
     #feed {
       flex: 1;
@@ -162,15 +187,35 @@
       border-radius: 6px;
       padding: 10px 14px;
       animation: slideIn .2s ease;
+      display: flex;
+      align-items: flex-start;
+      gap: 10px;
     }
 
     .event-card.priority-high   { border-left-color: #ef4444; }
     .event-card.priority-normal { border-left-color: #6366f1; }
     .event-card.priority-low    { border-left-color: #475569; }
+    .event-card.is-read { opacity: .45; }
 
+    .event-content { flex: 1; min-width: 0; }
     .event-card .event-title { font-size: .9rem; font-weight: 500; margin-bottom: 4px; }
-    .event-card .event-body  { font-size: .8rem; color: #94a3b8; margin-bottom: 6px; }
+    .event-card .event-body  { font-size: .8rem; color: #94a3b8; margin-bottom: 6px; word-break: break-word; }
     .event-card .event-meta  { font-size: .7rem; color: #475569; }
+
+    .read-btn {
+      background: none;
+      border: 1px solid #2d3148;
+      border-radius: 4px;
+      color: #475569;
+      font-size: .7rem;
+      padding: 2px 7px;
+      cursor: pointer;
+      flex-shrink: 0;
+      transition: all .15s;
+      white-space: nowrap;
+    }
+
+    .read-btn:hover { border-color: #22c55e; color: #22c55e; }
 
     #empty-feed {
       color: #475569;
@@ -205,96 +250,136 @@
       <option value="github">github</option>
       <option value="price">price</option>
     </select>
-    <input id="inp-url"  placeholder="URL / repo (owner/repo)" required>
+    <input id="inp-url" placeholder="URL / repo (owner/repo)" required>
     <button type="submit">Add source</button>
   </form>
   <div id="sources-list"></div>
 </aside>
 
 <main>
-  <h2>Live feed</h2>
+  <div id="feed-header">
+    <span>Live feed</span>
+    <button class="filter-btn active" data-priority="all">All</button>
+    <button class="filter-btn high"   data-priority="high">High</button>
+    <button class="filter-btn normal" data-priority="normal">Normal</button>
+    <button class="filter-btn low"    data-priority="low">Low</button>
+  </div>
   <div id="feed">
     <div id="empty-feed">No events yet. Add a source to start monitoring.</div>
   </div>
 </main>
 
 <script>
-  const API  = 'http://localhost:8080';
-  const WS   = 'ws://localhost:8081/ws';
+  const API = 'http://localhost:8080';
+  const WS  = 'ws://localhost:8081/ws';
 
-  // ── websocket ────────────────────────────────────────────────
+  // ── filter state ─────────────────────────────────────────────
+  let activeFilter = 'all';
+
+  document.querySelectorAll('.filter-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      activeFilter = btn.dataset.priority;
+      applyFilter();
+    });
+  });
+
+  function applyFilter() {
+    document.querySelectorAll('.event-card').forEach(card => {
+      const match = activeFilter === 'all' || card.dataset.priority === activeFilter;
+      card.style.display = match ? '' : 'none';
+    });
+  }
+
+  // ── websocket ─────────────────────────────────────────────────
   const dot   = document.getElementById('ws-dot');
   const label = document.getElementById('ws-label');
 
   function connectWS() {
     const ws = new WebSocket(WS);
-
-    ws.onopen = () => {
-      dot.classList.add('connected');
-      label.textContent = 'connected';
-    };
-
-    ws.onmessage = (e) => {
-      const event = JSON.parse(e.data);
-      prependEvent(event);
-    };
-
+    ws.onopen  = () => { dot.classList.add('connected'); label.textContent = 'connected'; };
     ws.onclose = () => {
       dot.classList.remove('connected');
       label.textContent = 'reconnecting…';
       setTimeout(connectWS, 3000);
     };
-
-    ws.onerror = () => ws.close();
+    ws.onerror   = () => ws.close();
+    ws.onmessage = (e) => prependEvent(JSON.parse(e.data));
   }
 
   connectWS();
 
-  // ── feed ─────────────────────────────────────────────────────
+  // ── feed ──────────────────────────────────────────────────────
   const feed = document.getElementById('feed');
+
+  function makeCard(ev) {
+    const priority = ev.priority || 'normal';
+    const isRead   = !!ev.read_at;
+
+    const card = document.createElement('div');
+    card.className = `event-card priority-${priority}${isRead ? ' is-read' : ''}`;
+    card.dataset.priority = priority;
+    card.dataset.id = ev.id;
+
+    const readBtn = isRead ? '' :
+      `<button class="read-btn" title="Mark as read">✓</button>`;
+
+    card.innerHTML = `
+      <div class="event-content">
+        <div class="event-title">${esc(ev.title)}</div>
+        <div class="event-body">${esc(ev.body)}</div>
+        <div class="event-meta">${new Date(ev.created_at).toLocaleString()}</div>
+      </div>
+      ${readBtn}
+    `;
+
+    if (!isRead) {
+      card.querySelector('.read-btn').addEventListener('click', () => markRead(ev.id, card));
+    }
+
+    return card;
+  }
 
   function prependEvent(ev) {
     document.getElementById('empty-feed')?.remove();
-
-    const card = document.createElement('div');
-    card.className = `event-card priority-${ev.priority || 'normal'}`;
-    card.innerHTML = `
-      <div class="event-title">${esc(ev.title)}</div>
-      <div class="event-body">${esc(ev.body)}</div>
-      <div class="event-meta">${new Date(ev.created_at).toLocaleString()}</div>
-    `;
+    const card = makeCard(ev);
+    const visible = activeFilter === 'all' || (ev.priority || 'normal') === activeFilter;
+    if (!visible) card.style.display = 'none';
     feed.prepend(card);
+  }
+
+  function markRead(id, card) {
+    fetch(`${API}/events/${id}/read`, { method: 'PATCH' })
+      .then(r => {
+        if (r.ok || r.status === 404) {
+          card.classList.add('is-read');
+          card.querySelector('.read-btn')?.remove();
+        }
+      })
+      .catch(() => {});
   }
 
   // load recent events on startup
   fetch(`${API}/events?limit=50`)
     .then(r => r.json())
     .then(events => {
-      if (events.length) {
-        document.getElementById('empty-feed')?.remove();
-        // API returns newest first, render in order
-        events.forEach(ev => {
-          const card = document.createElement('div');
-          card.className = `event-card priority-${ev.priority || 'normal'}`;
-          card.innerHTML = `
-            <div class="event-title">${esc(ev.title)}</div>
-            <div class="event-body">${esc(ev.body)}</div>
-            <div class="event-meta">${new Date(ev.created_at).toLocaleString()}</div>
-          `;
-          feed.appendChild(card);
-        });
-      }
+      if (!events.length) return;
+      document.getElementById('empty-feed')?.remove();
+      events.forEach(ev => {
+        const card = makeCard(ev);
+        const visible = activeFilter === 'all' || (ev.priority || 'normal') === activeFilter;
+        if (!visible) card.style.display = 'none';
+        feed.appendChild(card);
+      });
     })
     .catch(() => {});
 
-  // ── sources ──────────────────────────────────────────────────
+  // ── sources ───────────────────────────────────────────────────
   const sourcesList = document.getElementById('sources-list');
 
   function loadSources() {
-    fetch(`${API}/sources`)
-      .then(r => r.json())
-      .then(renderSources)
-      .catch(() => {});
+    fetch(`${API}/sources`).then(r => r.json()).then(renderSources).catch(() => {});
   }
 
   function renderSources(sources) {
@@ -302,12 +387,13 @@
     sources.forEach(s => {
       const div = document.createElement('div');
       div.className = 'source-item';
+      const subtitle = s.config?.repo || s.config?.url || s.config?.coin || '';
       div.innerHTML = `
         <div>
-          <div class="source-name">${esc(s.name)}</div>
-          <div class="source-url">${esc(s.config?.url || '')}</div>
+          <div class="source-name">${esc(s.name)} <span style="color:#475569;font-size:.7rem">[${esc(s.type)}]</span></div>
+          <div class="source-url">${esc(subtitle)}</div>
         </div>
-        <button class="source-del" title="Remove" data-id="${s.id}">✕</button>
+        <button class="source-del" title="Remove">✕</button>
       `;
       div.querySelector('.source-del').addEventListener('click', () => deleteSource(s.id));
       sourcesList.appendChild(div);
@@ -315,9 +401,7 @@
   }
 
   function deleteSource(id) {
-    fetch(`${API}/sources/${id}`, { method: 'DELETE' })
-      .then(() => loadSources())
-      .catch(() => {});
+    fetch(`${API}/sources/${id}`, { method: 'DELETE' }).then(() => loadSources()).catch(() => {});
   }
 
   document.getElementById('source-form').addEventListener('submit', e => {
@@ -327,12 +411,7 @@
     const raw  = document.getElementById('inp-url').value.trim();
     if (!name || !raw) return;
 
-    let config;
-    if (type === 'github') {
-      config = { repo: raw };
-    } else {
-      config = { url: raw };
-    }
+    const config = type === 'github' ? { repo: raw } : { url: raw };
 
     fetch(`${API}/sources`, {
       method: 'POST',
@@ -349,7 +428,7 @@
 
   loadSources();
 
-  // ── helpers ──────────────────────────────────────────────────
+  // ── helpers ───────────────────────────────────────────────────
   function esc(str) {
     return String(str ?? '')
       .replace(/&/g, '&amp;')
