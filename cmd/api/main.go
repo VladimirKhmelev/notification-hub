@@ -38,6 +38,8 @@ func main() {
 		w.Write([]byte("ok"))
 	})
 
+	mux.Handle("/", http.FileServer(http.Dir("web")))
+
 	api.NewHandler(sqlDB).Register(mux)
 
 	log.Println("api listening on :8080")

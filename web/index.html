@@ -1,0 +1,348 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Notification Hub</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: system-ui, sans-serif;
+      background: #0f1117;
+      color: #e2e8f0;
+      min-height: 100vh;
+      display: grid;
+      grid-template-columns: 320px 1fr;
+      grid-template-rows: auto 1fr;
+    }
+
+    header {
+      grid-column: 1 / -1;
+      padding: 14px 24px;
+      background: #1a1d27;
+      border-bottom: 1px solid #2d3148;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    header h1 { font-size: 1rem; font-weight: 600; letter-spacing: .02em; }
+
+    #ws-status {
+      margin-left: auto;
+      font-size: .75rem;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    #ws-dot {
+      width: 8px; height: 8px;
+      border-radius: 50%;
+      background: #ef4444;
+      transition: background .3s;
+    }
+
+    #ws-dot.connected { background: #22c55e; }
+
+    /* ── sidebar ── */
+    aside {
+      background: #13161f;
+      border-right: 1px solid #2d3148;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    aside h2 {
+      padding: 16px;
+      font-size: .7rem;
+      text-transform: uppercase;
+      letter-spacing: .08em;
+      color: #64748b;
+      border-bottom: 1px solid #2d3148;
+    }
+
+    #source-form {
+      padding: 12px;
+      border-bottom: 1px solid #2d3148;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    #source-form input {
+      background: #1e2130;
+      border: 1px solid #2d3148;
+      border-radius: 6px;
+      padding: 7px 10px;
+      color: #e2e8f0;
+      font-size: .85rem;
+      outline: none;
+      transition: border-color .2s;
+    }
+
+    #source-form input:focus { border-color: #6366f1; }
+    #source-form input::placeholder { color: #475569; }
+
+    #source-form button {
+      background: #6366f1;
+      color: #fff;
+      border: none;
+      border-radius: 6px;
+      padding: 8px;
+      font-size: .85rem;
+      cursor: pointer;
+      transition: background .2s;
+    }
+
+    #source-form button:hover { background: #4f46e5; }
+
+    #sources-list {
+      overflow-y: auto;
+      flex: 1;
+    }
+
+    .source-item {
+      display: flex;
+      align-items: center;
+      padding: 10px 14px;
+      border-bottom: 1px solid #1e2130;
+      gap: 10px;
+      font-size: .85rem;
+    }
+
+    .source-item .source-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .source-item .source-url  { font-size: .7rem; color: #64748b; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; }
+
+    .source-del {
+      background: none;
+      border: none;
+      color: #475569;
+      cursor: pointer;
+      font-size: 1rem;
+      padding: 2px 6px;
+      border-radius: 4px;
+      transition: color .2s;
+      flex-shrink: 0;
+    }
+
+    .source-del:hover { color: #ef4444; }
+
+    /* ── feed ── */
+    main {
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    main h2 {
+      padding: 16px;
+      font-size: .7rem;
+      text-transform: uppercase;
+      letter-spacing: .08em;
+      color: #64748b;
+      border-bottom: 1px solid #2d3148;
+    }
+
+    #feed {
+      flex: 1;
+      overflow-y: auto;
+      padding: 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .event-card {
+      background: #1a1d27;
+      border: 1px solid #2d3148;
+      border-left: 3px solid #475569;
+      border-radius: 6px;
+      padding: 10px 14px;
+      animation: slideIn .2s ease;
+    }
+
+    .event-card.priority-high   { border-left-color: #ef4444; }
+    .event-card.priority-normal { border-left-color: #6366f1; }
+    .event-card.priority-low    { border-left-color: #475569; }
+
+    .event-card .event-title { font-size: .9rem; font-weight: 500; margin-bottom: 4px; }
+    .event-card .event-body  { font-size: .8rem; color: #94a3b8; margin-bottom: 6px; }
+    .event-card .event-meta  { font-size: .7rem; color: #475569; }
+
+    #empty-feed {
+      color: #475569;
+      font-size: .85rem;
+      text-align: center;
+      margin-top: 40px;
+    }
+
+    @keyframes slideIn {
+      from { opacity: 0; transform: translateY(-6px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+  </style>
+</head>
+<body>
+
+<header>
+  <h1>Notification Hub</h1>
+  <div id="ws-status">
+    <div id="ws-dot"></div>
+    <span id="ws-label">disconnected</span>
+  </div>
+</header>
+
+<aside>
+  <h2>Sources</h2>
+  <form id="source-form">
+    <input id="inp-name" placeholder="Name" required>
+    <input id="inp-url"  placeholder="URL (https://...)" required>
+    <button type="submit">Add source</button>
+  </form>
+  <div id="sources-list"></div>
+</aside>
+
+<main>
+  <h2>Live feed</h2>
+  <div id="feed">
+    <div id="empty-feed">No events yet. Add a source to start monitoring.</div>
+  </div>
+</main>
+
+<script>
+  const API  = 'http://localhost:8080';
+  const WS   = 'ws://localhost:8081/ws';
+
+  // ── websocket ────────────────────────────────────────────────
+  const dot   = document.getElementById('ws-dot');
+  const label = document.getElementById('ws-label');
+
+  function connectWS() {
+    const ws = new WebSocket(WS);
+
+    ws.onopen = () => {
+      dot.classList.add('connected');
+      label.textContent = 'connected';
+    };
+
+    ws.onmessage = (e) => {
+      const event = JSON.parse(e.data);
+      prependEvent(event);
+    };
+
+    ws.onclose = () => {
+      dot.classList.remove('connected');
+      label.textContent = 'reconnecting…';
+      setTimeout(connectWS, 3000);
+    };
+
+    ws.onerror = () => ws.close();
+  }
+
+  connectWS();
+
+  // ── feed ─────────────────────────────────────────────────────
+  const feed = document.getElementById('feed');
+
+  function prependEvent(ev) {
+    document.getElementById('empty-feed')?.remove();
+
+    const card = document.createElement('div');
+    card.className = `event-card priority-${ev.priority || 'normal'}`;
+    card.innerHTML = `
+      <div class="event-title">${esc(ev.title)}</div>
+      <div class="event-body">${esc(ev.body)}</div>
+      <div class="event-meta">${new Date(ev.created_at).toLocaleString()}</div>
+    `;
+    feed.prepend(card);
+  }
+
+  // load recent events on startup
+  fetch(`${API}/events?limit=50`)
+    .then(r => r.json())
+    .then(events => {
+      if (events.length) {
+        document.getElementById('empty-feed')?.remove();
+        // API returns newest first, render in order
+        events.forEach(ev => {
+          const card = document.createElement('div');
+          card.className = `event-card priority-${ev.priority || 'normal'}`;
+          card.innerHTML = `
+            <div class="event-title">${esc(ev.title)}</div>
+            <div class="event-body">${esc(ev.body)}</div>
+            <div class="event-meta">${new Date(ev.created_at).toLocaleString()}</div>
+          `;
+          feed.appendChild(card);
+        });
+      }
+    })
+    .catch(() => {});
+
+  // ── sources ──────────────────────────────────────────────────
+  const sourcesList = document.getElementById('sources-list');
+
+  function loadSources() {
+    fetch(`${API}/sources`)
+      .then(r => r.json())
+      .then(renderSources)
+      .catch(() => {});
+  }
+
+  function renderSources(sources) {
+    sourcesList.innerHTML = '';
+    sources.forEach(s => {
+      const div = document.createElement('div');
+      div.className = 'source-item';
+      div.innerHTML = `
+        <div>
+          <div class="source-name">${esc(s.name)}</div>
+          <div class="source-url">${esc(s.config?.url || '')}</div>
+        </div>
+        <button class="source-del" title="Remove" data-id="${s.id}">✕</button>
+      `;
+      div.querySelector('.source-del').addEventListener('click', () => deleteSource(s.id));
+      sourcesList.appendChild(div);
+    });
+  }
+
+  function deleteSource(id) {
+    fetch(`${API}/sources/${id}`, { method: 'DELETE' })
+      .then(() => loadSources())
+      .catch(() => {});
+  }
+
+  document.getElementById('source-form').addEventListener('submit', e => {
+    e.preventDefault();
+    const name = document.getElementById('inp-name').value.trim();
+    const url  = document.getElementById('inp-url').value.trim();
+    if (!name || !url) return;
+
+    fetch(`${API}/sources`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ type: 'uptime', name, config: { url } }),
+    })
+      .then(() => {
+        document.getElementById('inp-name').value = '';
+        document.getElementById('inp-url').value  = '';
+        loadSources();
+      })
+      .catch(() => {});
+  });
+
+  loadSources();
+
+  // ── helpers ──────────────────────────────────────────────────
+  function esc(str) {
+    return String(str ?? '')
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;');
+  }
+</script>
+</body>
+</html>
