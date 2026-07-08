@@ -1,4 +1,9 @@
 services:
+  nats:
+    image: nats:2.10-alpine
+    ports:
+      - "4222:4222"
+
   postgres:
     image: postgres:16-alpine
     environment:
@@ -32,10 +37,10 @@ services:
     ports:
       - "8081:8081"
     environment:
-      DATABASE_URL: postgres://hub:hub@postgres:5432/hub?sslmode=disable
+      NATS_URL: nats://nats:4222
     depends_on:
-      postgres:
-        condition: service_healthy
+      nats:
+        condition: service_started
 
   event-collector-uptime:
     build:
@@ -43,9 +48,25 @@ services:
       dockerfile: cmd/event-collector-uptime/Dockerfile
     environment:
       DATABASE_URL: postgres://hub:hub@postgres:5432/hub?sslmode=disable
+      NATS_URL: nats://nats:4222
     depends_on:
       postgres:
         condition: service_healthy
+      nats:
+        condition: service_started
+
+  event-writer:
+    build:
+      context: .
+      dockerfile: cmd/event-writer/Dockerfile
+    environment:
+      DATABASE_URL: postgres://hub:hub@postgres:5432/hub?sslmode=disable
+      NATS_URL: nats://nats:4222
+    depends_on:
+      postgres:
+        condition: service_healthy
+      nats:
+        condition: service_started
 
 volumes:
   pgdata:

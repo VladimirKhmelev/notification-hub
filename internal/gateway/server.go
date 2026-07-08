@@ -12,9 +12,9 @@ type Server struct {
 	hub *hub
 }
 
-func NewServer(ctx context.Context, databaseURL string) *Server {
+func NewServer(ctx context.Context, natsURL string) *Server {
 	h := newHub()
-	go listenNotify(ctx, databaseURL, h)
+	go listenNATS(ctx, natsURL, h)
 	return &Server{hub: h}
 }
 

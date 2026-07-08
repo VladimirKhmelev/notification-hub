@@ -5,18 +5,18 @@ import (
 	"log"
 	"time"
 
-	"github.com/lib/pq"
+	"github.com/nats-io/nats.go"
+	"github.com/vladimir/notification-hub/internal/natsutil"
 )
 
-// listenNotify subscribes to Postgres LISTEN/NOTIFY on channel "events"
-// and broadcasts each payload to the hub.
-func listenNotify(ctx context.Context, databaseURL string, h *hub) {
+// listenNATS subscribes to events.inserted and broadcasts each payload to the hub.
+func listenNATS(ctx context.Context, natsURL string, h *hub) {
 	for {
-		if err := ctx.Err(); err != nil {
+		if ctx.Err() != nil {
 			return
 		}
-		if err := listen(ctx, databaseURL, h); err != nil {
-			log.Printf("ws-gateway: listener error: %v — retrying in 5s", err)
+		if err := subscribe(ctx, natsURL, h); err != nil {
+			log.Printf("ws-gateway: nats listener error: %v — retrying in 5s", err)
 		}
 		select {
 		case <-ctx.Done():
@@ -26,34 +26,23 @@ func listenNotify(ctx context.Context, databaseURL string, h *hub) {
 	}
 }
 
-func listen(ctx context.Context, databaseURL string, h *hub) error {
-	l := pq.NewListener(databaseURL, 5*time.Second, time.Minute, func(ev pq.ListenerEventType, err error) {
-		if err != nil {
-			log.Printf("ws-gateway: pq listener event: %v", err)
-		}
-	})
-	if err := l.Listen("events"); err != nil {
+func subscribe(ctx context.Context, natsURL string, h *hub) error {
+	nc, err := natsutil.Connect(natsURL)
+	if err != nil {
 		return err
 	}
-	defer l.Close()
+	defer nc.Close()
 
-	log.Println("ws-gateway: listening on postgres channel 'events'")
-	for {
-		select {
-		case <-ctx.Done():
-			return nil
-		case n, ok := <-l.Notify:
-			if !ok {
-				return nil
-			}
-			if n == nil {
-				continue
-			}
-			h.broadcast(ctx, []byte(n.Extra))
-		case <-time.After(90 * time.Second):
-			if err := l.Ping(); err != nil {
-				return err
-			}
-		}
+	sub, err := nc.Subscribe(natsutil.InsertedSubject, func(msg *nats.Msg) {
+		h.broadcast(ctx, msg.Data)
+	})
+	if err != nil {
+		return err
 	}
+	defer sub.Unsubscribe()
+
+	log.Printf("ws-gateway: subscribed to NATS subject %s", natsutil.InsertedSubject)
+
+	<-ctx.Done()
+	return nil
 }

@@ -10,13 +10,10 @@ import (
 )
 
 func main() {
-	databaseURL := os.Getenv("DATABASE_URL")
-	if databaseURL == "" {
-		databaseURL = "postgres://hub:hub@localhost:5432/hub?sslmode=disable"
-	}
+	natsURL := os.Getenv("NATS_URL")
 
 	ctx := context.Background()
-	srv := gateway.NewServer(ctx, databaseURL)
+	srv := gateway.NewServer(ctx, natsURL)
 
 	mux := http.NewServeMux()
 	mux.Handle("/ws", srv)

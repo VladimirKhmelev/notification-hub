@@ -8,7 +8,9 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/nats-io/nats.go"
 	_ "github.com/lib/pq"
+	"github.com/vladimir/notification-hub/internal/natsutil"
 )
 
 type source struct {
@@ -18,17 +20,27 @@ type source struct {
 	expect int // expected HTTP status, default 200
 }
 
+// EventMsg is the payload published to NATS and consumed by event-writer.
+type EventMsg struct {
+	SourceID int64  `json:"source_id"`
+	Title    string `json:"title"`
+	Body     string `json:"body"`
+	Priority string `json:"priority"`
+}
+
 type Collector struct {
 	db       *sql.DB
+	nc       *nats.Conn
 	interval time.Duration
 	client   http.Client
 	// last known state per source: true = up, false = down
 	state map[int64]bool
 }
 
-func New(db *sql.DB, interval time.Duration) *Collector {
+func New(db *sql.DB, nc *nats.Conn, interval time.Duration) *Collector {
 	return &Collector{
 		db:       db,
+		nc:       nc,
 		interval: interval,
 		client:   http.Client{Timeout: 5 * time.Second},
 		state:    make(map[int64]bool),
@@ -106,8 +118,20 @@ func (c *Collector) check(s source) {
 
 	title, body, priority := stateChange(s.name, s.url, up)
 	log.Printf("uptime: state change detected for %s (up=%v)", s.name, up)
-	if err := c.writeEvent(s.id, title, body, priority); err != nil {
-		log.Printf("uptime: write event for source %d: %v", s.id, err)
+
+	msg := EventMsg{
+		SourceID: s.id,
+		Title:    title,
+		Body:     body,
+		Priority: priority,
+	}
+	data, err := json.Marshal(msg)
+	if err != nil {
+		log.Printf("uptime: marshal event: %v", err)
+		return
+	}
+	if err := c.nc.Publish(natsutil.Subject, data); err != nil {
+		log.Printf("uptime: publish event for source %d: %v", s.id, err)
 	}
 }
 
@@ -129,12 +153,4 @@ func stateChange(name, url string, up bool) (title, body, priority string) {
 	return fmt.Sprintf("%s is DOWN", name),
 		fmt.Sprintf("%s (%s) is not responding", name, url),
 		"high"
-}
-
-func (c *Collector) writeEvent(sourceID int64, title, body, priority string) error {
-	_, err := c.db.Exec(
-		`INSERT INTO events (source_id, title, body, priority) VALUES ($1, $2, $3, $4)`,
-		sourceID, title, body, priority,
-	)
-	return err
 }
