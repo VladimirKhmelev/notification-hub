@@ -30,7 +30,10 @@ func TestFetchPrice_ParsesResponse(t *testing.T) {
 	c := newTestCollector()
 	// directly call fetchPrice with test server URL override
 	req, _ := http.NewRequest(http.MethodGet, srv.URL, nil)
-	resp, _ := c.client.Do(req)
+	resp, err := c.client.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
 	defer resp.Body.Close()
 
 	var result map[string]map[string]float64
