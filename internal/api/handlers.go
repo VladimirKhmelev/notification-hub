@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 )
 
 type Handler struct {
@@ -36,19 +37,73 @@ func (h *Handler) sources(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// DELETE /sources/{id} — delete
+// DELETE /sources/{id}       — delete
+// PATCH  /sources/{id}/mute  — mute source
 func (h *Handler) sourceByID(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodDelete {
-		w.WriteHeader(http.StatusMethodNotAllowed)
-		return
-	}
-	idStr := strings.TrimPrefix(r.URL.Path, "/sources/")
-	id, err := strconv.ParseInt(idStr, 10, 64)
+	path := strings.TrimPrefix(r.URL.Path, "/sources/")
+	parts := strings.SplitN(path, "/", 2)
+	id, err := strconv.ParseInt(parts[0], 10, 64)
 	if err != nil {
 		http.Error(w, "invalid id", http.StatusBadRequest)
 		return
 	}
+
+	if len(parts) == 2 && parts[1] == "mute" {
+		if r.Method != http.MethodPatch {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+		h.muteSource(w, r, id)
+		return
+	}
+
+	if r.Method != http.MethodDelete {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
 	res, err := h.db.Exec(`DELETE FROM sources WHERE id = $1`, id)
+	if err != nil {
+		http.Error(w, "db error", http.StatusInternalServerError)
+		return
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		http.Error(w, "not found", http.StatusNotFound)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (h *Handler) muteSource(w http.ResponseWriter, r *http.Request, id int64) {
+	var req struct {
+		Duration string `json:"duration"` // "1h", "8h", "forever", or "unmute"
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "invalid json", http.StatusBadRequest)
+		return
+	}
+
+	var mutedUntil *time.Time
+	switch req.Duration {
+	case "unmute":
+		// mutedUntil stays nil — clears the mute
+	case "forever":
+		t := time.Now().Add(100 * 365 * 24 * time.Hour)
+		mutedUntil = &t
+	case "until_morning":
+		now := time.Now()
+		morning := time.Date(now.Year(), now.Month(), now.Day()+1, 9, 0, 0, 0, now.Location())
+		mutedUntil = &morning
+	default:
+		d, err := time.ParseDuration(req.Duration)
+		if err != nil || d <= 0 {
+			http.Error(w, "invalid duration", http.StatusBadRequest)
+			return
+		}
+		t := time.Now().Add(d)
+		mutedUntil = &t
+	}
+
+	res, err := h.db.Exec(`UPDATE sources SET muted_until = $1 WHERE id = $2`, mutedUntil, id)
 	if err != nil {
 		http.Error(w, "db error", http.StatusInternalServerError)
 		return
@@ -100,7 +155,7 @@ func (h *Handler) events(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) listSources(w http.ResponseWriter, r *http.Request) {
-	rows, err := h.db.Query(`SELECT id, type, name, config, created_at FROM sources ORDER BY created_at DESC`)
+	rows, err := h.db.Query(`SELECT id, type, name, config, created_at, muted_until FROM sources ORDER BY created_at DESC`)
 	if err != nil {
 		http.Error(w, "db error", http.StatusInternalServerError)
 		return
@@ -110,7 +165,7 @@ func (h *Handler) listSources(w http.ResponseWriter, r *http.Request) {
 	sources := make([]Source, 0)
 	for rows.Next() {
 		var s Source
-		if err := rows.Scan(&s.ID, &s.Type, &s.Name, &s.Config, &s.CreatedAt); err != nil {
+		if err := rows.Scan(&s.ID, &s.Type, &s.Name, &s.Config, &s.CreatedAt, &s.MutedUntil); err != nil {
 			http.Error(w, "scan error", http.StatusInternalServerError)
 			return
 		}
@@ -145,9 +200,9 @@ func (h *Handler) createSource(w http.ResponseWriter, r *http.Request) {
 	err := h.db.QueryRow(`
 		INSERT INTO sources (type, name, config)
 		VALUES ($1, $2, $3)
-		RETURNING id, type, name, config, created_at`,
+		RETURNING id, type, name, config, created_at, muted_until`,
 		req.Type, req.Name, req.Config,
-	).Scan(&s.ID, &s.Type, &s.Name, &s.Config, &s.CreatedAt)
+	).Scan(&s.ID, &s.Type, &s.Name, &s.Config, &s.CreatedAt, &s.MutedUntil)
 	if err != nil {
 		http.Error(w, "db error", http.StatusInternalServerError)
 		return

@@ -56,6 +56,19 @@ func main() {
 			return
 		}
 
+		// skip if source is muted
+		var mutedUntil *time.Time
+		if err := db.QueryRow(
+			`SELECT muted_until FROM sources WHERE id = $1`, ev.SourceID,
+		).Scan(&mutedUntil); err != nil {
+			log.Printf("event-writer: check mute for source %d: %v", ev.SourceID, err)
+			return
+		}
+		if mutedUntil != nil && time.Now().Before(*mutedUntil) {
+			log.Printf("event-writer: source %d is muted until %s, dropping event", ev.SourceID, mutedUntil.Format(time.RFC3339))
+			return
+		}
+
 		var row eventRow
 		err := db.QueryRow(
 			`INSERT INTO events (source_id, title, body, priority)

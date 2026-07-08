@@ -131,6 +131,21 @@
 
     .source-del:hover { color: #ef4444; }
 
+    .source-mute {
+      background: none;
+      border: none;
+      color: #475569;
+      cursor: pointer;
+      font-size: .8rem;
+      padding: 2px 6px;
+      border-radius: 4px;
+      transition: color .2s;
+      flex-shrink: 0;
+    }
+
+    .source-mute:hover { color: #f59e0b; }
+    .source-mute.muted { color: #f59e0b; }
+
     /* ── feed ── */
     main {
       display: flex;
@@ -388,16 +403,61 @@
       const div = document.createElement('div');
       div.className = 'source-item';
       const subtitle = s.config?.repo || s.config?.url || s.config?.coin || '';
+      const isMuted  = s.muted_until && new Date(s.muted_until) > new Date();
       div.innerHTML = `
         <div>
           <div class="source-name">${esc(s.name)} <span style="color:#475569;font-size:.7rem">[${esc(s.type)}]</span></div>
-          <div class="source-url">${esc(subtitle)}</div>
+          <div class="source-url">${esc(subtitle)}${isMuted ? ' <span style="color:#f59e0b">muted</span>' : ''}</div>
         </div>
+        <button class="source-mute${isMuted ? ' muted' : ''}" title="${isMuted ? 'Unmute' : 'Mute'}">🔕</button>
         <button class="source-del" title="Remove">✕</button>
       `;
       div.querySelector('.source-del').addEventListener('click', () => deleteSource(s.id));
+      div.querySelector('.source-mute').addEventListener('click', () => {
+        if (isMuted) {
+          muteSource(s.id, 'unmute');
+        } else {
+          showMuteMenu(s.id, div.querySelector('.source-mute'));
+        }
+      });
       sourcesList.appendChild(div);
     });
+  }
+
+  function showMuteMenu(id, anchor) {
+    document.getElementById('mute-menu')?.remove();
+    const menu = document.createElement('div');
+    menu.id = 'mute-menu';
+    menu.style.cssText = 'position:fixed;background:#1e2130;border:1px solid #2d3148;border-radius:6px;padding:4px 0;z-index:100;font-size:.8rem;min-width:140px';
+    const options = [
+      { label: '1 hour',        duration: '1h' },
+      { label: '8 hours',       duration: '8h' },
+      { label: 'Until morning', duration: 'until_morning' },
+      { label: 'Forever',       duration: 'forever' },
+    ];
+    options.forEach(opt => {
+      const item = document.createElement('div');
+      item.textContent = opt.label;
+      item.style.cssText = 'padding:6px 14px;cursor:pointer;color:#e2e8f0';
+      item.onmouseenter = () => item.style.background = '#2d3148';
+      item.onmouseleave = () => item.style.background = '';
+      item.addEventListener('click', () => { menu.remove(); muteSource(id, opt.duration); });
+      menu.appendChild(item);
+    });
+    const rect = anchor.getBoundingClientRect();
+    menu.style.top  = (rect.bottom + 4) + 'px';
+    menu.style.left = rect.left + 'px';
+    document.body.appendChild(menu);
+    const close = (e) => { if (!menu.contains(e.target)) { menu.remove(); document.removeEventListener('click', close); } };
+    setTimeout(() => document.addEventListener('click', close), 0);
+  }
+
+  function muteSource(id, duration) {
+    fetch(`${API}/sources/${id}/mute`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ duration }),
+    }).then(() => loadSources()).catch(() => {});
   }
 
   function deleteSource(id) {

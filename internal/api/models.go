@@ -6,11 +6,12 @@ import (
 )
 
 type Source struct {
-	ID        int64           `json:"id"`
-	Type      string          `json:"type"`
-	Name      string          `json:"name"`
-	Config    json.RawMessage `json:"config"`
-	CreatedAt time.Time       `json:"created_at"`
+	ID         int64           `json:"id"`
+	Type       string          `json:"type"`
+	Name       string          `json:"name"`
+	Config     json.RawMessage `json:"config"`
+	CreatedAt  time.Time       `json:"created_at"`
+	MutedUntil *time.Time      `json:"muted_until"`
 }
 
 type Event struct {
