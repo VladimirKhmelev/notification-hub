@@ -30,7 +30,7 @@ func New(db *sql.DB, interval time.Duration) *Collector {
 	return &Collector{
 		db:       db,
 		interval: interval,
-		client:   http.Client{Timeout: 10 * time.Second},
+		client:   http.Client{Timeout: 5 * time.Second},
 		state:    make(map[int64]bool),
 	}
 }
@@ -105,6 +105,7 @@ func (c *Collector) check(s source) {
 	}
 
 	title, body, priority := stateChange(s.name, s.url, up)
+	log.Printf("uptime: state change detected for %s (up=%v)", s.name, up)
 	if err := c.writeEvent(s.id, title, body, priority); err != nil {
 		log.Printf("uptime: write event for source %d: %v", s.id, err)
 	}
