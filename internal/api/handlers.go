@@ -48,7 +48,11 @@ func (h *Handler) sourceByID(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if len(parts) == 2 && parts[1] == "mute" {
+	if len(parts) == 2 {
+		if parts[1] != "mute" {
+			http.Error(w, "not found", http.StatusNotFound)
+			return
+		}
 		if r.Method != http.MethodPatch {
 			w.WriteHeader(http.StatusMethodNotAllowed)
 			return
@@ -87,7 +91,7 @@ func (h *Handler) muteSource(w http.ResponseWriter, r *http.Request, id int64) {
 	case "unmute":
 		// mutedUntil stays nil — clears the mute
 	case "forever":
-		t := time.Now().Add(100 * 365 * 24 * time.Hour)
+		t := time.Date(9999, 12, 31, 23, 59, 59, 0, time.UTC)
 		mutedUntil = &t
 	case "until_morning":
 		now := time.Now()
@@ -213,15 +217,18 @@ func (h *Handler) createSource(w http.ResponseWriter, r *http.Request) {
 
 // PATCH /events/{id}/read — mark event as read
 func (h *Handler) eventByID(w http.ResponseWriter, r *http.Request) {
-	parts := strings.Split(strings.TrimPrefix(r.URL.Path, "/events/"), "/")
+	parts := strings.SplitN(strings.TrimPrefix(r.URL.Path, "/events/"), "/", 3)
 	id, err := strconv.ParseInt(parts[0], 10, 64)
 	if err != nil {
 		http.Error(w, "invalid id", http.StatusBadRequest)
 		return
 	}
 
-	// only PATCH /events/{id}/read is supported
-	if r.Method != http.MethodPatch || len(parts) < 2 || parts[1] != "read" {
+	if len(parts) < 2 || parts[1] != "read" {
+		http.Error(w, "not found", http.StatusNotFound)
+		return
+	}
+	if r.Method != http.MethodPatch {
 		w.WriteHeader(http.StatusMethodNotAllowed)
 		return
 	}

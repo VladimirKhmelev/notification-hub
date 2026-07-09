@@ -3,6 +3,7 @@ package main
 import (
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"log"
 	"os"
 	"os/signal"
@@ -56,12 +57,16 @@ func main() {
 			return
 		}
 
-		// skip if source is muted
+		// skip if source is muted; if source was deleted, skip silently (FK will reject insert anyway)
 		var mutedUntil *time.Time
 		if err := db.QueryRow(
 			`SELECT muted_until FROM sources WHERE id = $1`, ev.SourceID,
 		).Scan(&mutedUntil); err != nil {
-			log.Printf("event-writer: check mute for source %d: %v", ev.SourceID, err)
+			if errors.Is(err, sql.ErrNoRows) {
+				log.Printf("event-writer: source %d not found, dropping event", ev.SourceID)
+			} else {
+				log.Printf("event-writer: check mute for source %d: %v", ev.SourceID, err)
+			}
 			return
 		}
 		if mutedUntil != nil && time.Now().Before(*mutedUntil) {

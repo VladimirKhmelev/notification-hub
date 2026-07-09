@@ -255,8 +255,9 @@ func TestMuteSource_UntilMorning(t *testing.T) {
 	if mutedUntil == nil {
 		t.Fatal("muted_until should be set")
 	}
-	if mutedUntil.Hour() != 9 || mutedUntil.Minute() != 0 {
-		t.Fatalf("until_morning should be 09:00, got %02d:%02d", mutedUntil.Hour(), mutedUntil.Minute())
+	local := mutedUntil.In(time.Local)
+	if local.Hour() != 9 || local.Minute() != 0 {
+		t.Fatalf("until_morning should be 09:00 local, got %02d:%02d", local.Hour(), local.Minute())
 	}
 	if !mutedUntil.After(time.Now()) {
 		t.Fatal("until_morning should be in the future")
@@ -422,18 +423,27 @@ func TestMarkRead_AlreadyRead(t *testing.T) {
 	s := createTestSource(t, h, "uptime", "ReadTest2")
 
 	var evID int64
-	h.db.QueryRow(`INSERT INTO events (source_id, title, body, priority) VALUES ($1,'t','b','normal') RETURNING id`, s.ID).Scan(&evID)
+	if err := h.db.QueryRow(`INSERT INTO events (source_id, title, body, priority) VALUES ($1,'t','b','normal') RETURNING id`, s.ID).Scan(&evID); err != nil {
+		t.Fatalf("insert event: %v", err)
+	}
 	t.Cleanup(func() { h.db.Exec(`DELETE FROM events WHERE id=$1`, evID) })
 
-	// mark read twice
-	for i := 0; i < 2; i++ {
-		req := httptest.NewRequest(http.MethodPatch, "/events/"+itoa(evID)+"/read", nil)
-		req.URL.Path = "/events/" + itoa(evID) + "/read"
-		w := httptest.NewRecorder()
-		h.eventByID(w, req)
-		if i == 1 && w.Code != http.StatusNotFound {
-			t.Fatalf("second mark-read: expected 404, got %d", w.Code)
-		}
+	// first mark-read — expect 204
+	req1 := httptest.NewRequest(http.MethodPatch, "/events/"+itoa(evID)+"/read", nil)
+	req1.URL.Path = "/events/" + itoa(evID) + "/read"
+	w1 := httptest.NewRecorder()
+	h.eventByID(w1, req1)
+	if w1.Code != http.StatusNoContent {
+		t.Fatalf("first mark-read: expected 204, got %d", w1.Code)
+	}
+
+	// second mark-read — expect 404 (already read)
+	req2 := httptest.NewRequest(http.MethodPatch, "/events/"+itoa(evID)+"/read", nil)
+	req2.URL.Path = "/events/" + itoa(evID) + "/read"
+	w2 := httptest.NewRecorder()
+	h.eventByID(w2, req2)
+	if w2.Code != http.StatusNotFound {
+		t.Fatalf("second mark-read: expected 404, got %d", w2.Code)
 	}
 }
 
